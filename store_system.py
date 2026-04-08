@@ -314,6 +314,17 @@ def detect_platform_group(item: dict) -> Optional[str]:
     return None
 
 
+def get_default_label_for_user(data: dict, user_id: int):
+    matches = []
+    for key, label in data.setdefault("labels", {}).items():
+        ensure_label_shape(label)
+        if user_can_manage_label(label, user_id):
+            matches.append((key, label))
+    if len(matches) == 1:
+        return matches[0]
+    return None, None
+
+
 def resolve_charge_target(data: dict, user_id: int, label_name: Optional[str]):
     if label_name and label_name.strip():
         key, label = get_label_record(data, label_name)
@@ -323,12 +334,15 @@ def resolve_charge_target(data: dict, user_id: int, label_name: Optional[str]):
             return None, "You are not one of the owners for that label."
         return {"type": "label", "key": key, "name": label["name"], "balance": label.get("funds", 0), "record": label}, None
 
-    record = get_user_record(data, user_id)
-    return {"type": "wallet", "name": "Personal Wallet", "balance": record.get("wallet", 0), "record": record}, None
+    key, label = get_default_label_for_user(data, user_id)
+    if label:
+        return {"type": "label", "key": key, "name": label["name"], "balance": label.get("funds", 0), "record": label}, None
+
+    return None, "Pick a label with label_name, or make sure you only manage one label."
 
 
 def charge_target_balance_text(charge_target: dict) -> str:
-    return "Funds Left" if charge_target["type"] == "label" else "Wallet Left"
+    return "Label Balance Left" if charge_target["type"] == "label" else "Wallet Left"
 
 
 def deduct_from_charge_target(charge_target: dict, amount: float):
@@ -847,39 +861,39 @@ def setup_store_commands(bot):
         await interaction.response.send_message(embeds=embeds[:10])
 
     @app_commands.guilds(STAFF_GUILD)
-    @bot.tree.command(name="buy", description="Buy a normal store item.")
-    async def buy(interaction: discord.Interaction, item_id: str, quantity: Optional[int] = 1):
+    @bot.tree.command(name="buy", description="Buy a normal store item with label funds.")
+    async def buy(interaction: discord.Interaction, item_id: str, quantity: Optional[int] = 1, label_name: Optional[str] = None):
         item_id = item_id.lower().strip()
 
         if item_id not in SHOP_ITEMS:
             await interaction.response.send_message("That item_id does not exist.", ephemeral=True)
             return
-
         if quantity is None or quantity <= 0:
             await interaction.response.send_message("Quantity has to be at least 1.", ephemeral=True)
             return
 
         item = SHOP_ITEMS[item_id]
-
         if not item["stackable"] and quantity > 1:
             await interaction.response.send_message("That item is not stackable. Buy it one at a time.", ephemeral=True)
             return
 
         total_cost = item["price"] * quantity
-
         data = load_data()
         record = get_user_record(data, interaction.user.id)
         cleanup_expired_inventory(record)
 
-        if record["wallet"] < total_cost:
+        charge_target, error = resolve_charge_target(data, interaction.user.id, label_name)
+        if error:
+            await interaction.response.send_message(error, ephemeral=True)
+            return
+        if charge_target["balance"] < total_cost:
             await interaction.response.send_message(
-                f"You need {format_money(total_cost)} but only have {format_money(record['wallet'])} in your wallet.",
+                f"You need {format_money(total_cost)} but only have {format_money(charge_target['balance'])} in **{charge_target['name']}**.",
                 ephemeral=True,
             )
             return
 
-        record["wallet"] -= total_cost
-
+        deduct_from_charge_target(charge_target, total_cost)
         add_inventory_entry(
             record=record,
             item_id=item_id,
@@ -888,7 +902,6 @@ def setup_store_commands(bot):
             quantity=quantity,
             expires_in_days=item["expires_in_days"],
         )
-
         history_entry = add_purchase_history_entry(
             record,
             item_id=item_id,
@@ -896,44 +909,39 @@ def setup_store_commands(bot):
             category=item["category"],
             quantity=quantity,
             total_cost=total_cost,
+            charged_to_type=charge_target["type"],
+            charged_to_name=charge_target["name"],
+            balance_left=charge_target["balance"],
         )
-
         save_data(data)
 
         desc = (
             f"**Item:** {item['name']}\n"
             f"**Quantity:** x{quantity}\n"
             f"**Cost:** {format_money(total_cost)}\n"
-            f"**Wallet Left:** {format_money(record['wallet'])}"
+            f"**Charged To:** {charge_target['name']}\n"
+            f"**{charge_target_balance_text(charge_target)}:** {format_money(charge_target['balance'])}"
         )
         if item["expires_in_days"]:
             desc += f"\n**Expires In:** {item['expires_in_days']} day(s)"
 
-        embed = make_simple_embed(
-            title="Purchase Complete",
-            description=desc,
-            color=discord.Color.green(),
-        )
+        embed = make_simple_embed(title="Purchase Complete", description=desc, color=discord.Color.green())
         await interaction.response.send_message(embed=embed)
-
-        await send_purchase_log(bot, interaction.user, record, history_entry)
-
+        await send_purchase_log(bot, interaction.user, record, history_entry, data)
     @app_commands.guilds(STAFF_GUILD)
-    @bot.tree.command(name="buyphysical", description="Buy physical stock by tier.")
-    async def buyphysical(interaction: discord.Interaction, item_id: str, tier: str, orders: Optional[int] = 1):
+    @bot.tree.command(name="buyphysical", description="Buy physical stock by tier with label funds.")
+    async def buyphysical(interaction: discord.Interaction, item_id: str, tier: str, orders: Optional[int] = 1, label_name: Optional[str] = None):
         item_id = item_id.lower().strip()
         tier = tier.lower().strip()
 
         if item_id not in PHYSICAL_STOCK:
             await interaction.response.send_message("That physical item_id does not exist.", ephemeral=True)
             return
-
         if orders is None or orders <= 0:
             await interaction.response.send_message("Orders must be at least 1.", ephemeral=True)
             return
 
         item = PHYSICAL_STOCK[item_id]
-
         if tier not in item["tiers"]:
             await interaction.response.send_message(
                 f"That tier does not exist. Valid tiers: {', '.join(item['tiers'].keys())}",
@@ -943,24 +951,22 @@ def setup_store_commands(bot):
 
         tier_price = item["tiers"][tier]
         total_cost = tier_price * orders
-
-        if tier == "single":
-            units_bought = 1 * orders
-        else:
-            units_bought = int(tier) * orders
+        units_bought = orders if tier == "single" else int(tier) * orders
 
         data = load_data()
         record = get_user_record(data, interaction.user.id)
-
-        if record["wallet"] < total_cost:
+        charge_target, error = resolve_charge_target(data, interaction.user.id, label_name)
+        if error:
+            await interaction.response.send_message(error, ephemeral=True)
+            return
+        if charge_target["balance"] < total_cost:
             await interaction.response.send_message(
-                f"You need {format_money(total_cost)} but only have {format_money(record['wallet'])} in your wallet.",
+                f"You need {format_money(total_cost)} but only have {format_money(charge_target['balance'])} in **{charge_target['name']}**.",
                 ephemeral=True,
             )
             return
 
-        record["wallet"] -= total_cost
-
+        deduct_from_charge_target(charge_target, total_cost)
         add_inventory_entry(
             record=record,
             item_id=f"{item_id}:{tier}",
@@ -969,7 +975,6 @@ def setup_store_commands(bot):
             quantity=units_bought,
             expires_in_days=None,
         )
-
         history_entry = add_purchase_history_entry(
             record,
             item_id=item_id,
@@ -979,8 +984,10 @@ def setup_store_commands(bot):
             total_cost=total_cost,
             tier=tier,
             units_added=units_bought,
+            charged_to_type=charge_target["type"],
+            charged_to_name=charge_target["name"],
+            balance_left=charge_target["balance"],
         )
-
         save_data(data)
 
         embed = make_simple_embed(
@@ -991,24 +998,24 @@ def setup_store_commands(bot):
                 f"**Orders:** x{orders}\n"
                 f"**Units Added:** {units_bought:,}\n"
                 f"**Cost:** {format_money(total_cost)}\n"
-                f"**Wallet Left:** {format_money(record['wallet'])}"
+                f"**Charged To:** {charge_target['name']}\n"
+                f"**{charge_target_balance_text(charge_target)}:** {format_money(charge_target['balance'])}"
             ),
             color=discord.Color.green(),
         )
         await interaction.response.send_message(embed=embed)
-
-        await send_purchase_log(bot, interaction.user, record, history_entry)
-
+        await send_purchase_log(bot, interaction.user, record, history_entry, data)
     @app_commands.guilds(STAFF_GUILD)
-    @bot.tree.command(name="addtocart", description="Add a store item or physical tier to your cart.")
+    @bot.tree.command(name="addtocart", description="Add a store item or physical tier to your cart for a label.")
     async def addtocart(
         interaction: discord.Interaction,
         item_id: str,
         quantity: Optional[int] = 1,
         tier: Optional[str] = None,
         orders: Optional[int] = 1,
+        label_name: Optional[str] = None,
     ):
-        entry, error = calculate_cart_entry(item_id=item_id, quantity=quantity, tier=tier, orders=orders)
+        entry, error = calculate_cart_entry(item_id=item_id, quantity=quantity, tier=tier, orders=orders, label_name=label_name)
         if error:
             await interaction.response.send_message(error, ephemeral=True)
             return
@@ -1024,12 +1031,12 @@ def setup_store_commands(bot):
                 f"**Item:** {entry['name']}\n"
                 f"**Type:** {'Physical' if entry['entry_type'] == 'physical' else 'Standard'}\n"
                 f"**Cost:** {format_money(entry['total_cost'])}\n"
+                f"**Label:** {entry.get('label_name') or 'Not set yet'}\n"
                 f"**Cart Items:** {len(record['cart'])}"
             ),
             color=discord.Color.blurple(),
         )
         await interaction.response.send_message(embed=embed)
-
     @app_commands.guilds(STAFF_GUILD)
     @bot.tree.command(name="viewcart", description="View everything currently in your cart.")
     async def viewcart(interaction: discord.Interaction):
@@ -1049,6 +1056,7 @@ def setup_store_commands(bot):
             color=discord.Color.gold(),
         )
         embed.add_field(name="Cart Total", value=format_money(total), inline=False)
+        embed.set_footer(text="Use /checkout with a label if your cart items do not already have one saved.")
         if len(lines) > 15:
             embed.set_footer(text=f"Showing 15 of {len(lines)} cart item(s)")
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1082,8 +1090,8 @@ def setup_store_commands(bot):
         await interaction.response.send_message(f"Cleared {removed} item(s) from your cart.", ephemeral=True)
 
     @app_commands.guilds(STAFF_GUILD)
-    @bot.tree.command(name="checkout", description="Purchase everything currently in your cart.")
-    async def checkout(interaction: discord.Interaction):
+    @bot.tree.command(name="checkout", description="Purchase everything currently in your cart using label balances.")
+    async def checkout(interaction: discord.Interaction, label_name: Optional[str] = None):
         data = load_data()
         record = get_user_record(data, interaction.user.id)
         cleanup_expired_inventory(record)
@@ -1093,73 +1101,100 @@ def setup_store_commands(bot):
             await interaction.response.send_message("Your cart is empty.", ephemeral=True)
             return
 
-        total_cost = sum(entry["total_cost"] for entry in cart)
-        if record["wallet"] < total_cost:
-            await interaction.response.send_message(
-                f"You need {format_money(total_cost)} but only have {format_money(record['wallet'])} in your wallet.",
-                ephemeral=True,
-            )
-            return
+        grouped = {}
+        for entry in cart:
+            chosen_label = entry.get("label_name") or (format_label_name(label_name) if label_name else None)
+            grouped.setdefault(chosen_label, []).append(entry)
 
-        record["wallet"] -= total_cost
+        charge_targets = {}
+        for chosen_label, entries in grouped.items():
+            charge_target, error = resolve_charge_target(data, interaction.user.id, chosen_label)
+            if error:
+                await interaction.response.send_message(
+                    f"Cart items need a label. Problem with **{chosen_label or 'missing label'}**: {error}",
+                    ephemeral=True,
+                )
+                return
+            subtotal = sum(entry["total_cost"] for entry in entries)
+            if charge_target["balance"] < subtotal:
+                await interaction.response.send_message(
+                    f"**{charge_target['name']}** needs {format_money(subtotal)} but only has {format_money(charge_target['balance'])}.",
+                    ephemeral=True,
+                )
+                return
+            charge_targets[chosen_label] = charge_target
+
         history_entries = []
         purchased_count = 0
-        for entry in cart:
-            if entry["entry_type"] == "physical":
-                add_inventory_entry(
-                    record=record,
-                    item_id=f"{entry['item_id']}:{entry['tier']}",
-                    name=f"{entry['name']} ({entry['tier']})",
-                    category="physicals",
-                    quantity=entry["units_added"],
-                    expires_in_days=None,
-                )
-                history_entries.append(add_purchase_history_entry(
-                    record,
-                    item_id=entry["item_id"],
-                    name=entry["name"],
-                    category="physicals",
-                    quantity=entry["orders"],
-                    total_cost=entry["total_cost"],
-                    tier=entry["tier"],
-                    units_added=entry["units_added"],
-                ))
-            else:
-                add_inventory_entry(
-                    record=record,
-                    item_id=entry["item_id"],
-                    name=entry["name"],
-                    category=entry["category"],
-                    quantity=entry["quantity"],
-                    expires_in_days=entry.get("expires_in_days"),
-                )
-                history_entries.append(add_purchase_history_entry(
-                    record,
-                    item_id=entry["item_id"],
-                    name=entry["name"],
-                    category=entry["category"],
-                    quantity=entry["quantity"],
-                    total_cost=entry["total_cost"],
-                ))
-            purchased_count += 1
+        cart_total = sum(entry["total_cost"] for entry in cart)
+
+        for chosen_label, entries in grouped.items():
+            charge_target = charge_targets[chosen_label]
+            subtotal = sum(entry["total_cost"] for entry in entries)
+            deduct_from_charge_target(charge_target, subtotal)
+
+            for entry in entries:
+                if entry["entry_type"] == "physical":
+                    add_inventory_entry(
+                        record=record,
+                        item_id=f"{entry['item_id']}:{entry['tier']}",
+                        name=f"{entry['name']} ({entry['tier']})",
+                        category="physicals",
+                        quantity=entry["units_added"],
+                        expires_in_days=None,
+                    )
+                    history_entries.append(add_purchase_history_entry(
+                        record,
+                        item_id=entry["item_id"],
+                        name=entry["name"],
+                        category="physicals",
+                        quantity=entry["orders"],
+                        total_cost=entry["total_cost"],
+                        tier=entry["tier"],
+                        units_added=entry["units_added"],
+                        charged_to_type=charge_target["type"],
+                        charged_to_name=charge_target["name"],
+                        balance_left=charge_target["balance"],
+                    ))
+                else:
+                    add_inventory_entry(
+                        record=record,
+                        item_id=entry["item_id"],
+                        name=entry["name"],
+                        category=entry["category"],
+                        quantity=entry["quantity"],
+                        expires_in_days=entry.get("expires_in_days"),
+                    )
+                    history_entries.append(add_purchase_history_entry(
+                        record,
+                        item_id=entry["item_id"],
+                        name=entry["name"],
+                        category=entry["category"],
+                        quantity=entry["quantity"],
+                        total_cost=entry["total_cost"],
+                        charged_to_type=charge_target["type"],
+                        charged_to_name=charge_target["name"],
+                        balance_left=charge_target["balance"],
+                    ))
+                purchased_count += 1
 
         record["cart"] = []
         save_data(data)
 
+        summary_lines = [f"**{ct['name']}** → {format_money(ct['balance'])} left" for ct in charge_targets.values()]
         embed = make_simple_embed(
             title="Checkout Complete",
             description=(
                 f"**Purchased Items:** {purchased_count}\n"
-                f"**Total Cost:** {format_money(total_cost)}\n"
-                f"**Wallet Left:** {format_money(record['wallet'])}"
+                f"**Total Cost:** {format_money(cart_total)}\n"
+                + "\n".join(summary_lines)
             ),
             color=discord.Color.green(),
         )
         await interaction.response.send_message(embed=embed)
 
         for history_entry in history_entries:
-            await send_purchase_log(bot, interaction.user, record, history_entry)
-
+            await send_purchase_log(bot, interaction.user, record, history_entry, data)
     @app_commands.guilds(STAFF_GUILD)
     @bot.tree.command(name="createlabel", description="Owner only: create a label with starting funds.")
     async def createlabel(interaction: discord.Interaction, label_name: str, starting_funds: Optional[int] = 0, owner: Optional[discord.Member] = None):

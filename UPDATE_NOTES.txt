@@ -1,0 +1,23 @@
+ENCORE NEXT UPDATE
+
+Included:
+- hidden trend logic on social posts (trend still works in the background)
+- follower counts hidden on feed posts
+- /profile command now shows platform follower counts separately
+- social persona support kept and cleaned up
+- moderate engagement waves on member likes/comments/replies
+- passive follower growth after each post
+- /setartistpfp
+- /setpersonapfp
+- /deletepersona
+- /deleteartist
+- label-first shop flow:
+  - /buy uses label funds
+  - /buyphysical uses label funds
+  - /addtocart supports label_name
+  - /checkout uses label balances
+- music_sim_social.db preserved exactly as uploaded
+
+Important:
+- I did not wipe your database or artist records.
+- /deleteartist only deletes when someone explicitly runs that command.

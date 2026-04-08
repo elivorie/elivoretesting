@@ -16,9 +16,9 @@ TREND_MULTIPLIERS = {
     "cancelled": 0.28,
     "declining": 0.68,
     "stable": 1.0,
-    "rising": 1.22,
-    "viral": 1.6,
-    "superstar": 2.15,
+    "rising": 1.18,
+    "viral": 1.48,
+    "superstar": 1.9,
 }
 TREND_CHOICES = tuple(TREND_MULTIPLIERS.keys())
 
@@ -33,14 +33,14 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def normalize_name(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip()).casefold()
+
+
 def clean_handle(handle: str) -> str:
     cleaned = re.sub(r"[^a-z0-9._]", "", handle.lower().replace(" ", "_"))
     cleaned = cleaned.strip("._")
     return cleaned[:24]
-
-
-def normalize_name(value: str) -> str:
-    return re.sub(r"\s+", " ", value.strip()).casefold()
 
 
 def format_number(value: int) -> str:
@@ -55,9 +55,13 @@ def relative_timestamp_text(iso_value: str) -> str:
 def format_platform_name(platform: str) -> str:
     return {
         "instagram": "Instagram",
-        "twitter": "Twitter",
+        "twitter": "Twitter / X",
         "tiktok": "TikTok",
     }.get(platform, platform.title())
+
+
+def owner_only(interaction: discord.Interaction) -> bool:
+    return bool(interaction.guild and interaction.user.id == interaction.guild.owner_id)
 
 
 def init_social_db() -> None:
@@ -132,11 +136,6 @@ def init_social_db() -> None:
             )
             """
         )
-
-        artist_cols = {row["name"] for row in conn.execute("PRAGMA table_info(artists)").fetchall()}
-        if "trend" not in artist_cols:
-            conn.execute("ALTER TABLE artists ADD COLUMN trend TEXT NOT NULL DEFAULT 'stable'")
-
         conn.commit()
 
 
@@ -176,6 +175,11 @@ def register_artist(owner_user_id: int, stage_name: str, handle: str, avatar_url
         return False, "That artist name is already registered."
 
 
+def get_artist_by_id(artist_id: int) -> Optional[sqlite3.Row]:
+    with db_connect() as conn:
+        return conn.execute("SELECT * FROM artists WHERE artist_id = ?", (artist_id,)).fetchone()
+
+
 def list_artists_for_user(owner_user_id: int) -> list[sqlite3.Row]:
     with db_connect() as conn:
         return conn.execute(
@@ -200,13 +204,7 @@ def find_artist(query: str) -> Optional[sqlite3.Row]:
         ).fetchone()
 
 
-def create_or_update_persona(
-    artist: sqlite3.Row,
-    display_name: str,
-    handle: str,
-    avatar_url: Optional[str],
-    bio: str,
-) -> tuple[bool, str]:
+def create_or_update_persona(artist: sqlite3.Row, display_name: str, handle: str, avatar_url: Optional[str], bio: str) -> tuple[bool, str]:
     display_name = re.sub(r"\s+", " ", display_name.strip())
     handle = clean_handle(handle or display_name)
     if not display_name or not handle:
@@ -254,16 +252,12 @@ def create_or_update_persona(
                 ),
             )
         conn.commit()
-
     return True, handle
 
 
 def get_persona_for_artist(artist_id: int) -> Optional[sqlite3.Row]:
     with db_connect() as conn:
-        return conn.execute(
-            "SELECT * FROM social_personas WHERE artist_id = ?",
-            (artist_id,),
-        ).fetchone()
+        return conn.execute("SELECT * FROM social_personas WHERE artist_id = ?", (artist_id,)).fetchone()
 
 
 def list_personas_for_user(owner_user_id: int) -> list[sqlite3.Row]:
@@ -311,12 +305,17 @@ def find_persona(query: str) -> Optional[sqlite3.Row]:
 def update_followers(artist_id: int, platform: str, amount: int) -> Optional[sqlite3.Row]:
     if platform not in PLATFORMS:
         return None
-    column = f"{platform}_followers"
-    amount = max(0, int(amount))
     with db_connect() as conn:
-        conn.execute(f"UPDATE artists SET {column} = ? WHERE artist_id = ?", (amount, artist_id))
+        conn.execute(f"UPDATE artists SET {platform}_followers = ? WHERE artist_id = ?", (max(0, int(amount)), artist_id))
         conn.commit()
         return conn.execute("SELECT * FROM artists WHERE artist_id = ?", (artist_id,)).fetchone()
+
+
+def increment_followers(artist_id: int, platform: str, amount: int) -> Optional[sqlite3.Row]:
+    artist = get_artist_by_id(artist_id)
+    if not artist or platform not in PLATFORMS:
+        return None
+    return update_followers(artist_id, platform, int(artist[f"{platform}_followers"]) + max(0, int(amount)))
 
 
 def update_trend(artist_id: int, trend: str) -> Optional[sqlite3.Row]:
@@ -328,6 +327,43 @@ def update_trend(artist_id: int, trend: str) -> Optional[sqlite3.Row]:
         return conn.execute("SELECT * FROM artists WHERE artist_id = ?", (artist_id,)).fetchone()
 
 
+def update_artist_avatar(artist_id: int, avatar_url: Optional[str]) -> Optional[sqlite3.Row]:
+    with db_connect() as conn:
+        conn.execute("UPDATE artists SET avatar_url = ? WHERE artist_id = ?", (avatar_url, artist_id))
+        conn.commit()
+        return conn.execute("SELECT * FROM artists WHERE artist_id = ?", (artist_id,)).fetchone()
+
+
+def update_persona_avatar(artist_id: int, avatar_url: Optional[str]) -> Optional[sqlite3.Row]:
+    with db_connect() as conn:
+        conn.execute("UPDATE social_personas SET avatar_url = ? WHERE artist_id = ?", (avatar_url, artist_id))
+        conn.commit()
+        return conn.execute("SELECT * FROM social_personas WHERE artist_id = ?", (artist_id,)).fetchone()
+
+
+def delete_persona_record(artist_id: int) -> bool:
+    with db_connect() as conn:
+        cur = conn.execute("DELETE FROM social_personas WHERE artist_id = ?", (artist_id,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def delete_artist_record(artist_id: int) -> bool:
+    with db_connect() as conn:
+        conn.execute("DELETE FROM social_personas WHERE artist_id = ?", (artist_id,))
+        conn.execute("DELETE FROM social_posts WHERE artist_id = ?", (artist_id,))
+        conn.execute("DELETE FROM post_interactions WHERE post_id NOT IN (SELECT post_id FROM social_posts)")
+        cur = conn.execute("DELETE FROM artists WHERE artist_id = ?", (artist_id,))
+        conn.commit()
+        return cur.rowcount > 0
+
+
+def get_artist_post_count(artist_id: int) -> int:
+    with db_connect() as conn:
+        row = conn.execute("SELECT COUNT(*) AS c FROM social_posts WHERE artist_id = ?", (artist_id,)).fetchone()
+        return int(row["c"] if row else 0)
+
+
 def get_followers(artist: sqlite3.Row, platform: str) -> int:
     return int(artist[f"{platform}_followers"])
 
@@ -337,52 +373,59 @@ def generate_platform_metrics(platform: str, followers: int, trend: str) -> dict
     followers = max(0, followers)
 
     if platform == "instagram":
-        likes = max(20, int(followers * random.uniform(0.03, 0.11) * mult))
-        comments = max(2, int(likes * random.uniform(0.015, 0.05)))
-        return {
-            "likes": likes,
-            "comments": comments,
-            "replies": 0,
-            "reposts": 0,
-            "views": 0,
-            "shares": 0,
-        }
+        likes = max(20, int(followers * random.uniform(0.03, 0.095) * mult))
+        comments = max(2, int(likes * random.uniform(0.012, 0.04)))
+        return {"likes": likes, "comments": comments, "replies": 0, "reposts": 0, "views": 0, "shares": 0}
 
     if platform == "twitter":
-        likes = max(10, int(followers * random.uniform(0.008, 0.04) * mult))
-        replies = max(1, int(likes * random.uniform(0.09, 0.24)))
-        reposts = max(1, int(likes * random.uniform(0.12, 0.4)))
-        return {
-            "likes": likes,
-            "comments": 0,
-            "replies": replies,
-            "reposts": reposts,
-            "views": 0,
-            "shares": 0,
-        }
+        likes = max(10, int(followers * random.uniform(0.008, 0.03) * mult))
+        replies = max(1, int(likes * random.uniform(0.07, 0.18)))
+        reposts = max(1, int(likes * random.uniform(0.09, 0.22)))
+        return {"likes": likes, "comments": 0, "replies": replies, "reposts": reposts, "views": 0, "shares": 0}
 
-    likes = max(20, int(followers * random.uniform(0.018, 0.09) * mult))
-    comments = max(2, int(likes * random.uniform(0.015, 0.05)))
-    shares = max(1, int(likes * random.uniform(0.02, 0.08)))
-    views = max(likes * 5, int(followers * random.uniform(0.15, 0.75) * mult))
-    return {
-        "likes": likes,
-        "comments": comments,
-        "replies": 0,
-        "reposts": 0,
-        "views": views,
-        "shares": shares,
-    }
+    likes = max(20, int(followers * random.uniform(0.018, 0.07) * mult))
+    comments = max(2, int(likes * random.uniform(0.01, 0.035)))
+    shares = max(1, int(likes * random.uniform(0.02, 0.065)))
+    views = max(likes * 5, int(followers * random.uniform(0.12, 0.55) * mult))
+    return {"likes": likes, "comments": comments, "replies": 0, "reposts": 0, "views": views, "shares": shares}
 
 
-def create_social_post(
-    artist: sqlite3.Row,
-    platform: str,
-    caption: str,
-    media_url: Optional[str],
-    metrics: dict,
-    persona: Optional[sqlite3.Row] = None,
-) -> int:
+def generate_post_follower_growth(platform: str, followers: int, trend: str, metrics: dict) -> int:
+    mult = TREND_MULTIPLIERS.get(trend, 1.0)
+    if platform == "instagram":
+        growth = followers * random.uniform(0.0012, 0.0055) * mult
+        growth += metrics["likes"] * random.uniform(0.015, 0.05)
+    elif platform == "twitter":
+        growth = followers * random.uniform(0.0007, 0.0035) * mult
+        growth += (metrics["likes"] + metrics["reposts"] * 2 + metrics["replies"] * 1.5) * random.uniform(0.01, 0.04)
+    else:
+        growth = followers * random.uniform(0.002, 0.009) * mult
+        growth += (metrics["likes"] + metrics["shares"] * 3 + metrics["comments"] * 1.3) * random.uniform(0.02, 0.07)
+    return max(8, int(growth))
+
+
+def generate_interaction_wave(platform: str, followers: int, interaction_type: str) -> dict:
+    follower_band = max(1, followers // 1000)
+
+    if platform == "instagram":
+        like_gain = random.randint(55, 160) + follower_band * random.randint(3, 10)
+        comment_gain = random.randint(6, 24) if interaction_type == "comment" else 0
+        return {"likes": like_gain, "comments": comment_gain, "replies": 0, "reposts": 0, "views": 0, "shares": 0}
+
+    if platform == "twitter":
+        like_gain = random.randint(40, 130) + follower_band * random.randint(2, 8)
+        reply_gain = random.randint(5, 18) if interaction_type == "reply" else 0
+        repost_gain = random.randint(4, 15) if interaction_type in {"like", "reply"} else 0
+        return {"likes": like_gain, "comments": 0, "replies": reply_gain, "reposts": repost_gain, "views": 0, "shares": 0}
+
+    like_gain = random.randint(70, 210) + follower_band * random.randint(4, 12)
+    comment_gain = random.randint(4, 18) if interaction_type == "comment" else 0
+    share_gain = random.randint(6, 22)
+    view_gain = like_gain * random.randint(8, 16)
+    return {"likes": like_gain, "comments": comment_gain, "replies": 0, "reposts": 0, "views": view_gain, "shares": share_gain}
+
+
+def create_social_post(artist: sqlite3.Row, platform: str, caption: str, media_url: Optional[str], metrics: dict, persona: Optional[sqlite3.Row] = None) -> int:
     stage_name = persona["display_name"] if persona else artist["stage_name"]
     handle = persona["handle"] if persona else artist["handle"]
     avatar_url = persona["avatar_url"] if persona and persona["avatar_url"] else artist["avatar_url"]
@@ -427,20 +470,35 @@ def get_post(post_id: int) -> Optional[sqlite3.Row]:
 
 def attach_message_to_post(post_id: int, channel_id: int, message_id: int) -> None:
     with db_connect() as conn:
-        conn.execute(
-            "UPDATE social_posts SET channel_id = ?, message_id = ? WHERE post_id = ?",
-            (channel_id, message_id, post_id),
-        )
+        conn.execute("UPDATE social_posts SET channel_id = ?, message_id = ? WHERE post_id = ?", (channel_id, message_id, post_id))
         conn.commit()
 
 
+def apply_interaction_wave(post_id: int, interaction_type: str) -> Optional[sqlite3.Row]:
+    post = get_post(post_id)
+    if not post:
+        return None
+    artist = get_artist_by_id(int(post["artist_id"]))
+    if not artist:
+        return post
+
+    wave = generate_interaction_wave(post["platform"], get_followers(artist, post["platform"]), interaction_type)
+
+    with db_connect() as conn:
+        conn.execute(
+            """
+            UPDATE social_posts
+            SET likes = likes + ?, comments = comments + ?, replies = replies + ?, reposts = reposts + ?, views = views + ?, shares = shares + ?
+            WHERE post_id = ?
+            """,
+            (wave["likes"], wave["comments"], wave["replies"], wave["reposts"], wave["views"], wave["shares"], post_id),
+        )
+        conn.commit()
+        return conn.execute("SELECT * FROM social_posts WHERE post_id = ?", (post_id,)).fetchone()
+
+
 def add_post_interaction(post_id: int, user_id: int, interaction_type: str, content: str = "") -> tuple[bool, Optional[sqlite3.Row]]:
-    column_map = {
-        "like": "likes",
-        "comment": "comments",
-        "reply": "replies",
-    }
-    if interaction_type not in column_map:
+    if interaction_type not in {"like", "comment", "reply"}:
         return False, None
 
     with db_connect() as conn:
@@ -452,15 +510,11 @@ def add_post_interaction(post_id: int, user_id: int, interaction_type: str, cont
                 """,
                 (post_id, user_id, interaction_type, content.strip(), now_iso()),
             )
+            conn.commit()
         except sqlite3.IntegrityError:
             return False, conn.execute("SELECT * FROM social_posts WHERE post_id = ?", (post_id,)).fetchone()
 
-        conn.execute(
-            f"UPDATE social_posts SET {column_map[interaction_type]} = {column_map[interaction_type]} + 1 WHERE post_id = ?",
-            (post_id,),
-        )
-        conn.commit()
-        return True, conn.execute("SELECT * FROM social_posts WHERE post_id = ?", (post_id,)).fetchone()
+    return True, apply_interaction_wave(post_id, interaction_type)
 
 
 async def notify_artist_owner(bot: commands.Bot, artist: sqlite3.Row, title: str, description: str) -> None:
@@ -478,37 +532,28 @@ async def notify_artist_owner(bot: commands.Bot, artist: sqlite3.Row, title: str
         return
 
 
-def build_social_embed(post: sqlite3.Row, artist: sqlite3.Row) -> discord.Embed:
+def build_social_embed(post: sqlite3.Row) -> discord.Embed:
     platform = post["platform"]
-    color_map = {
-        "instagram": discord.Color.from_rgb(214, 41, 118),
-        "twitter": discord.Color.blurple(),
-        "tiktok": discord.Color.dark_embed(),
-    }
-
+    color_map = {"instagram": discord.Color.from_rgb(214, 41, 118), "twitter": discord.Color.blurple(), "tiktok": discord.Color.dark_embed()}
     embed = discord.Embed(color=color_map.get(platform, discord.Color.blurple()))
-    embed.title = f"{format_platform_name(platform)} • {post['stage_name']}"
 
+    embed.title = post["stage_name"]
+    author_text = f"@{post['handle']} • {format_platform_name(platform)}"
     if post["avatar_url"]:
-        embed.set_author(name=f"@{post['handle']}", icon_url=post["avatar_url"])
+        embed.set_author(name=author_text, icon_url=post["avatar_url"])
     else:
-        embed.set_author(name=f"@{post['handle']}")
+        embed.set_author(name=author_text)
 
-    desc = post["caption"]
+    embed.description = post["caption"]
+
     if platform == "twitter":
-        desc += (
-            f"\n\n❤️ {format_number(post['likes'])}  •  🔁 {format_number(post['reposts'])}"
-            f"  •  💬 {format_number(post['replies'])}"
-        )
+        stat_line = f"❤️ {format_number(post['likes'])} • 🔁 {format_number(post['reposts'])} • 💬 {format_number(post['replies'])}"
     elif platform == "instagram":
-        desc += f"\n\n❤️ {format_number(post['likes'])}  •  💬 {format_number(post['comments'])}"
+        stat_line = f"❤️ {format_number(post['likes'])} • 💬 {format_number(post['comments'])}"
     else:
-        desc += (
-            f"\n\n▶️ {format_number(post['views'])}  •  ❤️ {format_number(post['likes'])}"
-            f"  •  💬 {format_number(post['comments'])}  •  ↗️ {format_number(post['shares'])}"
-        )
+        stat_line = f"▶️ {format_number(post['views'])} • ❤️ {format_number(post['likes'])} • 💬 {format_number(post['comments'])} • ↗️ {format_number(post['shares'])}"
 
-    embed.description = desc
+    embed.add_field(name="Engagement", value=stat_line, inline=False)
 
     if platform == "tiktok":
         if post["media_url"]:
@@ -516,52 +561,30 @@ def build_social_embed(post: sqlite3.Row, artist: sqlite3.Row) -> discord.Embed:
     elif post["media_url"]:
         embed.set_image(url=post["media_url"])
 
-    embed.add_field(name="Followers", value=format_number(get_followers(artist, platform)), inline=True)
-    embed.add_field(name="Trend", value=(artist["trend"] or "stable").title(), inline=True)
-    embed.add_field(name="Posted", value=relative_timestamp_text(post["created_at"]), inline=True)
-    embed.set_footer(text=f"Post #{post['post_id']} • use the buttons below to interact")
+    embed.set_footer(text=f"Post #{post['post_id']} • {relative_timestamp_text(post['created_at'])}")
     return embed
 
 
-def build_artist_embed(artist: sqlite3.Row) -> discord.Embed:
-    embed = discord.Embed(
-        title=artist["stage_name"],
-        description=artist["bio"] or "No bio yet.",
-        color=discord.Color.purple(),
-    )
+def build_artist_embed(artist: sqlite3.Row, persona: Optional[sqlite3.Row] = None) -> discord.Embed:
+    name = persona["display_name"] if persona else artist["stage_name"]
+    handle = persona["handle"] if persona else artist["handle"]
+    avatar_url = persona["avatar_url"] if persona and persona["avatar_url"] else artist["avatar_url"]
+    bio = persona["bio"] if persona and persona["bio"] else (artist["bio"] or "No bio yet.")
 
-    if artist["avatar_url"]:
-        embed.set_author(name=f"@{artist['handle']}", icon_url=artist["avatar_url"])
+    embed = discord.Embed(title=name, description=bio, color=discord.Color.purple())
+    if avatar_url:
+        embed.set_author(name=f"@{handle}", icon_url=avatar_url)
     else:
-        embed.set_author(name=f"@{artist['handle']}")
+        embed.set_author(name=f"@{handle}")
 
     embed.add_field(name="Instagram", value=format_number(artist["instagram_followers"]), inline=True)
-    embed.add_field(name="Twitter", value=format_number(artist["twitter_followers"]), inline=True)
+    embed.add_field(name="Twitter / X", value=format_number(artist["twitter_followers"]), inline=True)
     embed.add_field(name="TikTok", value=format_number(artist["tiktok_followers"]), inline=True)
-    embed.add_field(name="Trend", value=(artist["trend"] or "stable").title(), inline=True)
+    embed.add_field(name="Posts", value=str(get_artist_post_count(int(artist["artist_id"]))), inline=True)
     embed.add_field(name="Owner", value=f"<@{artist['owner_user_id']}>", inline=True)
-    embed.add_field(name="Status", value="Registered", inline=True)
+    if persona:
+        embed.add_field(name="Linked Artist", value=artist["stage_name"], inline=True)
     return embed
-
-
-def build_persona_embed(persona: sqlite3.Row, artist: sqlite3.Row) -> discord.Embed:
-    embed = discord.Embed(
-        title=persona["display_name"],
-        description=persona["bio"] or "No social bio yet.",
-        color=discord.Color.magenta(),
-    )
-    if persona["avatar_url"]:
-        embed.set_author(name=f"@{persona['handle']}", icon_url=persona["avatar_url"])
-    else:
-        embed.set_author(name=f"@{persona['handle']}")
-    embed.add_field(name="Linked Artist", value=artist["stage_name"], inline=True)
-    embed.add_field(name="Owner", value=f"<@{persona['owner_user_id']}>", inline=True)
-    embed.add_field(name="Created", value=relative_timestamp_text(persona["created_at"]), inline=True)
-    return embed
-
-
-def owner_only(interaction: discord.Interaction) -> bool:
-    return bool(interaction.guild and interaction.user.id == interaction.guild.owner_id)
 
 
 class CommentModal(discord.ui.Modal):
@@ -579,12 +602,7 @@ class CommentModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         interaction_type = "reply" if self.parent_view.platform == "twitter" else "comment"
-        added, updated_post = add_post_interaction(
-            self.parent_view.post_id,
-            interaction.user.id,
-            interaction_type,
-            self.comment.value,
-        )
+        added, updated_post = add_post_interaction(self.parent_view.post_id, interaction.user.id, interaction_type, self.comment.value)
         if not added:
             noun = "reply" if interaction_type == "reply" else "comment"
             await interaction.response.send_message(f"You already left a {noun} on this post.", ephemeral=True)
@@ -594,20 +612,10 @@ class CommentModal(discord.ui.Modal):
             await interaction.response.send_message("That post could not be updated.", ephemeral=True)
             return
 
-        artist = find_artist(updated_post["stage_name"]) or get_artist_by_id(int(updated_post["artist_id"]))
-        if artist is None:
-            await interaction.response.send_message("Artist data was missing.", ephemeral=True)
-            return
-
         self.parent_view.refresh_from_post(updated_post)
-        await interaction.message.edit(embed=build_social_embed(updated_post, artist), view=self.parent_view)
+        await interaction.message.edit(embed=build_social_embed(updated_post), view=self.parent_view)
         label = "Reply" if interaction_type == "reply" else "Comment"
         await interaction.response.send_message(f"{label} added.", ephemeral=True)
-
-
-def get_artist_by_id(artist_id: int) -> Optional[sqlite3.Row]:
-    with db_connect() as conn:
-        return conn.execute("SELECT * FROM artists WHERE artist_id = ?", (artist_id,)).fetchone()
 
 
 class SocialPostView(discord.ui.View):
@@ -615,18 +623,16 @@ class SocialPostView(discord.ui.View):
         super().__init__(timeout=None)
         self.post_id = int(post_id)
         self.platform = platform
-        self._set_comment_label()
+        self._sync_labels()
 
-    def _set_comment_label(self):
-        if len(self.children) >= 2:
-            button = self.children[1]
-            if isinstance(button, discord.ui.Button):
-                button.label = "Reply" if self.platform == "twitter" else "Comment"
+    def _sync_labels(self):
+        if len(self.children) >= 2 and isinstance(self.children[1], discord.ui.Button):
+            self.children[1].label = "Reply" if self.platform == "twitter" else "Comment"
 
     def refresh_from_post(self, post: sqlite3.Row):
         self.post_id = int(post["post_id"])
         self.platform = post["platform"]
-        self._set_comment_label()
+        self._sync_labels()
 
     @discord.ui.button(label="Like", style=discord.ButtonStyle.success)
     async def like_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -639,13 +645,8 @@ class SocialPostView(discord.ui.View):
             await interaction.response.send_message("That post could not be updated.", ephemeral=True)
             return
 
-        artist = get_artist_by_id(int(updated_post["artist_id"]))
-        if artist is None:
-            await interaction.response.send_message("Artist data was missing.", ephemeral=True)
-            return
-
         self.refresh_from_post(updated_post)
-        await interaction.response.edit_message(embed=build_social_embed(updated_post, artist), view=self)
+        await interaction.response.edit_message(embed=build_social_embed(updated_post), view=self)
 
     @discord.ui.button(label="Comment", style=discord.ButtonStyle.primary)
     async def comment_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -657,95 +658,31 @@ class SocialMedia(commands.Cog):
         self.bot = bot_client
 
     @app_commands.command(name="registerartist", description="Register your artist profile.")
-    async def registerartist(
-        self,
-        interaction: discord.Interaction,
-        artist_name: str,
-        handle: Optional[str] = None,
-        avatar_url: Optional[str] = None,
-        bio: Optional[str] = None,
-    ):
-        success, message = register_artist(
-            interaction.user.id,
-            artist_name,
-            handle or artist_name,
-            avatar_url,
-            bio or "",
-        )
+    async def registerartist(self, interaction: discord.Interaction, artist_name: str, handle: Optional[str] = None, avatar_url: Optional[str] = None, bio: Optional[str] = None):
+        success, message = register_artist(interaction.user.id, artist_name, handle or artist_name, avatar_url, bio or "")
         if not success:
             await interaction.response.send_message(message, ephemeral=True)
             return
 
         await interaction.response.send_message(
-            f"Registered **{artist_name}** as **@{message}**. Instagram, Twitter, and TikTok all start at **{format_number(DEFAULT_FOLLOWERS)}** followers with trend set to **Stable**.",
+            f"Registered **{artist_name}** as **@{message}** with starting followers on all platforms.",
             ephemeral=True,
         )
 
     @app_commands.command(name="createpersona", description="Create or update a separate social media persona for an artist.")
-    async def createpersona(
-        self,
-        interaction: discord.Interaction,
-        artist: str,
-        display_name: str,
-        handle: Optional[str] = None,
-        avatar_url: Optional[str] = None,
-        bio: Optional[str] = None,
-    ):
+    async def createpersona(self, interaction: discord.Interaction, artist: str, display_name: str, handle: Optional[str] = None, avatar_url: Optional[str] = None, bio: Optional[str] = None):
         row = find_artist(artist)
         if not row:
             await interaction.response.send_message("Artist not found.", ephemeral=True)
             return
-
         if int(row["owner_user_id"]) != interaction.user.id and not owner_only(interaction):
-            await interaction.response.send_message(
-                "You can only create a persona for your own artist unless you're the server owner.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message("You can only create a persona for your own artist unless you're the server owner.", ephemeral=True)
             return
-
-        success, persona_handle = create_or_update_persona(
-            row,
-            display_name,
-            handle or display_name,
-            avatar_url,
-            bio or "",
-        )
+        success, persona_handle = create_or_update_persona(row, display_name, handle or display_name, avatar_url, bio or "")
         if not success:
             await interaction.response.send_message(persona_handle, ephemeral=True)
             return
-
-        await interaction.response.send_message(
-            f"Saved social persona **{display_name}** as **@{persona_handle}** for **{row['stage_name']}**.",
-            ephemeral=True,
-        )
-
-    @app_commands.command(name="personas", description="See your saved social personas.")
-    async def personas(self, interaction: discord.Interaction):
-        rows = list_personas_for_user(interaction.user.id)
-        if not rows:
-            await interaction.response.send_message("You have not created any social personas yet.", ephemeral=True)
-            return
-
-        lines = []
-        for row in rows:
-            lines.append(f"**{row['display_name']}** (@{row['handle']}) → linked to **{row['stage_name']}**")
-
-        embed = discord.Embed(title="Your Social Personas", description="\n".join(lines), color=discord.Color.magenta())
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="personaprofile", description="View a social persona profile.")
-    async def personaprofile(self, interaction: discord.Interaction, persona: str):
-        persona_row = find_persona(persona)
-        if not persona_row:
-            await interaction.response.send_message("Persona not found.", ephemeral=True)
-            return
-
-        artist = get_artist_by_id(int(persona_row["artist_id"]))
-        if artist is None:
-            await interaction.response.send_message("Linked artist not found.", ephemeral=True)
-            return
-
-        await interaction.response.send_message(embed=build_persona_embed(persona_row, artist))
+        await interaction.response.send_message(f"Saved social persona **{display_name}** as **@{persona_handle}** for **{row['stage_name']}**.", ephemeral=True)
 
     @app_commands.command(name="artists", description="See your registered artists.")
     async def artists(self, interaction: discord.Interaction):
@@ -753,16 +690,42 @@ class SocialMedia(commands.Cog):
         if not rows:
             await interaction.response.send_message("You have not registered any artists yet.", ephemeral=True)
             return
-
         lines = []
         for row in rows:
             lines.append(
                 f"**{row['stage_name']}** (@{row['handle']})\n"
-                f"IG {format_number(row['instagram_followers'])} • TW {format_number(row['twitter_followers'])} • TT {format_number(row['tiktok_followers'])} • {row['trend'].title()}"
+                f"Instagram {format_number(row['instagram_followers'])} • Twitter {format_number(row['twitter_followers'])} • TikTok {format_number(row['tiktok_followers'])}"
             )
-
         embed = discord.Embed(title="Your Artists", description="\n\n".join(lines), color=discord.Color.purple())
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="personas", description="See your saved social personas.")
+    async def personas(self, interaction: discord.Interaction):
+        rows = list_personas_for_user(interaction.user.id)
+        if not rows:
+            await interaction.response.send_message("You have not created any social personas yet.", ephemeral=True)
+            return
+        lines = [f"**{row['display_name']}** (@{row['handle']}) → linked to **{row['stage_name']}**" for row in rows]
+        embed = discord.Embed(title="Your Social Personas", description="\n".join(lines), color=discord.Color.magenta())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="profile", description="View an artist or persona profile.")
+    async def profile(self, interaction: discord.Interaction, name: str):
+        persona = find_persona(name)
+        if persona:
+            artist = get_artist_by_id(int(persona["artist_id"]))
+            if not artist:
+                await interaction.response.send_message("Linked artist not found.", ephemeral=True)
+                return
+            await interaction.response.send_message(embed=build_artist_embed(artist, persona))
+            return
+
+        artist = find_artist(name)
+        if not artist:
+            await interaction.response.send_message("Artist or persona not found.", ephemeral=True)
+            return
+
+        await interaction.response.send_message(embed=build_artist_embed(artist))
 
     @app_commands.command(name="artistprofile", description="View a registered artist profile.")
     async def artistprofile(self, interaction: discord.Interaction, artist: str):
@@ -772,14 +735,67 @@ class SocialMedia(commands.Cog):
             return
         await interaction.response.send_message(embed=build_artist_embed(row))
 
-    async def _send_social_post(
-        self,
-        interaction: discord.Interaction,
-        platform: str,
-        artist: str,
-        caption: str,
-        media_url: Optional[str],
-    ):
+    @app_commands.command(name="personaprofile", description="View a social persona profile.")
+    async def personaprofile(self, interaction: discord.Interaction, persona: str):
+        persona_row = find_persona(persona)
+        if not persona_row:
+            await interaction.response.send_message("Persona not found.", ephemeral=True)
+            return
+        artist = get_artist_by_id(int(persona_row["artist_id"]))
+        if not artist:
+            await interaction.response.send_message("Linked artist not found.", ephemeral=True)
+            return
+        await interaction.response.send_message(embed=build_artist_embed(artist, persona_row))
+
+    @app_commands.command(name="setartistpfp", description="Change your artist profile photo.")
+    async def setartistpfp(self, interaction: discord.Interaction, artist: str, image_url: str):
+        row = find_artist(artist)
+        if not row:
+            await interaction.response.send_message("Artist not found.", ephemeral=True)
+            return
+        if int(row["owner_user_id"]) != interaction.user.id and not owner_only(interaction):
+            await interaction.response.send_message("You can only edit your own artist unless you're the server owner.", ephemeral=True)
+            return
+        update_artist_avatar(int(row["artist_id"]), image_url.strip())
+        await interaction.response.send_message("Artist profile photo updated.", ephemeral=True)
+
+    @app_commands.command(name="setpersonapfp", description="Change your persona profile photo.")
+    async def setpersonapfp(self, interaction: discord.Interaction, persona: str, image_url: str):
+        persona_row = find_persona(persona)
+        if not persona_row:
+            await interaction.response.send_message("Persona not found.", ephemeral=True)
+            return
+        if int(persona_row["owner_user_id"]) != interaction.user.id and not owner_only(interaction):
+            await interaction.response.send_message("You can only edit your own persona unless you're the server owner.", ephemeral=True)
+            return
+        update_persona_avatar(int(persona_row["artist_id"]), image_url.strip())
+        await interaction.response.send_message("Persona profile photo updated.", ephemeral=True)
+
+    @app_commands.command(name="deletepersona", description="Delete a social persona.")
+    async def deletepersona(self, interaction: discord.Interaction, persona: str):
+        persona_row = find_persona(persona)
+        if not persona_row:
+            await interaction.response.send_message("Persona not found.", ephemeral=True)
+            return
+        if int(persona_row["owner_user_id"]) != interaction.user.id and not owner_only(interaction):
+            await interaction.response.send_message("You can only delete your own persona unless you're the server owner.", ephemeral=True)
+            return
+        delete_persona_record(int(persona_row["artist_id"]))
+        await interaction.response.send_message(f"Deleted social persona **{persona_row['display_name']}**.", ephemeral=True)
+
+    @app_commands.command(name="deleteartist", description="Delete an artist and all linked social data.")
+    async def deleteartist(self, interaction: discord.Interaction, artist: str):
+        row = find_artist(artist)
+        if not row:
+            await interaction.response.send_message("Artist not found.", ephemeral=True)
+            return
+        if int(row["owner_user_id"]) != interaction.user.id and not owner_only(interaction):
+            await interaction.response.send_message("You can only delete your own artist unless you're the server owner.", ephemeral=True)
+            return
+        delete_artist_record(int(row["artist_id"]))
+        await interaction.response.send_message(f"Deleted artist **{row['stage_name']}** and linked social data.", ephemeral=True)
+
+    async def _send_social_post(self, interaction: discord.Interaction, platform: str, artist: str, caption: str, media_url: Optional[str]):
         if not interaction.guild or not isinstance(interaction.channel, discord.TextChannel):
             await interaction.response.send_message("Use this inside a text channel.", ephemeral=True)
             return
@@ -788,16 +804,15 @@ class SocialMedia(commands.Cog):
         if not row:
             await interaction.response.send_message("Artist not found.", ephemeral=True)
             return
-
         if int(row["owner_user_id"]) != interaction.user.id and not owner_only(interaction):
-            await interaction.response.send_message(
-                "You can only post for your own registered artist unless you're the server owner.",
-                ephemeral=True,
-            )
+            await interaction.response.send_message("You can only post for your own artist unless you're the server owner.", ephemeral=True)
             return
 
         persona = get_persona_for_artist(int(row["artist_id"]))
         metrics = generate_platform_metrics(platform, get_followers(row, platform), (row["trend"] or "stable").lower())
+        growth = generate_post_follower_growth(platform, get_followers(row, platform), (row["trend"] or "stable").lower(), metrics)
+        row = increment_followers(int(row["artist_id"]), platform, growth) or row
+
         post_id = create_social_post(row, platform, caption, media_url, metrics, persona=persona)
         post = get_post(post_id)
         if not post:
@@ -805,12 +820,13 @@ class SocialMedia(commands.Cog):
             return
 
         view = SocialPostView(post_id, platform)
-        message = await interaction.channel.send(embed=build_social_embed(post, row), view=view)
+        message = await interaction.channel.send(embed=build_social_embed(post), view=view)
         attach_message_to_post(post_id, interaction.channel.id, message.id)
 
         display_name = persona["display_name"] if persona else row["stage_name"]
         await interaction.response.send_message(
-            f"{format_platform_name(platform)} post for **{display_name}** is live in {interaction.channel.mention}.",
+            f"{format_platform_name(platform)} post for **{display_name}** is live in {interaction.channel.mention}.\n"
+            f"Follower growth: **+{format_number(growth)}** on {format_platform_name(platform)}.",
             ephemeral=True,
         )
 
@@ -831,101 +847,29 @@ class SocialMedia(commands.Cog):
         if not owner_only(interaction):
             await interaction.response.send_message("Only the server owner can use this.", ephemeral=True)
             return
-
         row = find_artist(artist)
         platform = platform.lower().strip()
         if not row or platform not in PLATFORMS:
             await interaction.response.send_message("Artist or platform not found.", ephemeral=True)
             return
-
         row = update_followers(int(row["artist_id"]), platform, amount)
         await interaction.response.send_message(
             f"{row['stage_name']}'s {format_platform_name(platform)} followers are now **{format_number(row[f'{platform}_followers'])}**.",
             ephemeral=True,
         )
-        await notify_artist_owner(
-            self.bot,
-            row,
-            "Followers Updated",
-            f"Your **{format_platform_name(platform)}** followers for **{row['stage_name']}** are now **{format_number(row[f'{platform}_followers'])}**.",
-        )
 
-    @app_commands.command(name="addfollowers", description="Owner only: add followers to an artist.")
-    async def addfollowers(self, interaction: discord.Interaction, artist: str, platform: str, amount: int):
-        if not owner_only(interaction):
-            await interaction.response.send_message("Only the server owner can use this.", ephemeral=True)
-            return
-
-        row = find_artist(artist)
-        platform = platform.lower().strip()
-        if not row or platform not in PLATFORMS:
-            await interaction.response.send_message("Artist or platform not found.", ephemeral=True)
-            return
-
-        current = int(row[f"{platform}_followers"])
-        row = update_followers(int(row["artist_id"]), platform, current + max(0, amount))
-        await interaction.response.send_message(
-            f"Added **{format_number(amount)}** followers to **{row['stage_name']}** on {format_platform_name(platform)}. New total: **{format_number(row[f'{platform}_followers'])}**.",
-            ephemeral=True,
-        )
-        await notify_artist_owner(
-            self.bot,
-            row,
-            "Followers Updated",
-            f"You gained **{format_number(amount)}** {format_platform_name(platform)} followers for **{row['stage_name']}**. New total: **{format_number(row[f'{platform}_followers'])}**.",
-        )
-
-    @app_commands.command(name="removefollowers", description="Owner only: remove followers from an artist.")
-    async def removefollowers(self, interaction: discord.Interaction, artist: str, platform: str, amount: int):
-        if not owner_only(interaction):
-            await interaction.response.send_message("Only the server owner can use this.", ephemeral=True)
-            return
-
-        row = find_artist(artist)
-        platform = platform.lower().strip()
-        if not row or platform not in PLATFORMS:
-            await interaction.response.send_message("Artist or platform not found.", ephemeral=True)
-            return
-
-        current = int(row[f"{platform}_followers"])
-        row = update_followers(int(row["artist_id"]), platform, max(0, current - max(0, amount)))
-        await interaction.response.send_message(
-            f"Removed **{format_number(amount)}** followers from **{row['stage_name']}** on {format_platform_name(platform)}. New total: **{format_number(row[f'{platform}_followers'])}**.",
-            ephemeral=True,
-        )
-        await notify_artist_owner(
-            self.bot,
-            row,
-            "Followers Updated",
-            f"Your **{row['stage_name']}** {format_platform_name(platform)} followers were adjusted. New total: **{format_number(row[f'{platform}_followers'])}**.",
-        )
-
-    @app_commands.command(name="settrend", description="Owner only: set an artist trend.")
+    @app_commands.command(name="settrend", description="Owner only: set a hidden artist trend.")
     async def settrend(self, interaction: discord.Interaction, artist: str, trend: str):
         if not owner_only(interaction):
             await interaction.response.send_message("Only the server owner can use this.", ephemeral=True)
             return
-
         row = find_artist(artist)
         trend = trend.lower().strip()
         if not row or trend not in TREND_CHOICES:
-            await interaction.response.send_message(
-                f"Artist or trend not found. Trends: {', '.join(t.title() for t in TREND_CHOICES)}",
-                ephemeral=True,
-            )
+            await interaction.response.send_message(f"Artist or trend not found. Trends: {', '.join(t.title() for t in TREND_CHOICES)}", ephemeral=True)
             return
-
         row = update_trend(int(row["artist_id"]), trend)
-        await interaction.response.send_message(
-            f"{row['stage_name']}'s trend is now **{row['trend'].title()}**.",
-            ephemeral=True,
-        )
-        await notify_artist_owner(
-            self.bot,
-            row,
-            "Trend Updated",
-            f"Your artist **{row['stage_name']}** is now set to **{row['trend'].title()}**.",
-        )
+        await interaction.response.send_message(f"Hidden trend for **{row['stage_name']}** updated to **{row['trend'].title()}**.", ephemeral=True)
 
 
 async def setup_social_system(bot: commands.Bot):
