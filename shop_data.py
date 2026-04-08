@@ -1,0 +1,465 @@
+SHOP_CATEGORY_LABELS = {
+  "promotion": "Promotion",
+  "remixes": "Remixes / Versions",
+  "physicals": "Physical Singles",
+  "festivals": "Festivals / Production",
+  "music_videos": "Music Videos",
+  "campaigns": "Campaigns / Artist Deals",
+  "mandatory": "Mandatory Fees / Codes",
+  "playlisting": "Playlisting",
+  "interviews": "Interviews",
+  "tours": "Tours",
+  "airplay": "Airplay / Radio",
+  "payola": "Payola",
+}
+
+STORE_NOTES = {
+  "promotion": "All promo lasts 28 days. Renew it or it expires.",
+  "playlisting": "All playlisting lasts 42 days unless renewed.",
+  "interviews": "Interview effects last 28 days and can be positive or negative.",
+  "payola": "Payola stacks and can be purchased multiple times. Renew every 4 weeks.",
+  "campaigns": "Too many active campaigns can oversaturate an artist.",
+  "festivals": "Festival slots should be bought before lineups are unveiled. Production affects aftermath.",
+  "music_videos": "Multiple extras are allowed. Resolution and extras affect replay value and success.",
+  "mandatory": "Missing licenses or codes can affect chart eligibility.",
+  "tours": "Tour promo lasts 28 days. Venue, production, and logistics can be layered together.",
+  "airplay": "Airplay lasts 28 days unless renewed. Multi-format pushes can stack, but too much can oversaturate a release.",
+}
+
+RAW_SHOP = {
+  "promotion": {
+      "Blogs": [
+          ("billboard_news", "Billboard News", 315000, False, 28),
+          ("popbase", "PopBase", 175000, False, 28),
+          ("popcrave", "PopCrave", 140000, False, 28),
+          ("poptingz", "PopTingz", 70000, False, 28),
+          ("unwine_with_tashak_promo", "Unwine With Tasha K", 35000, False, 28),
+          ("kenbarbie_promo", "KenBarbie", 10000, False, 28),
+      ],
+      "Billboards": [
+          ("billboard_worldwide", "Worldwide Billboard", 2500000, False, 28),
+          ("billboard_nationwide", "Nationwide Billboard", 800000, False, 28),
+          ("billboard_regional", "Regional Billboard", 250000, False, 28),
+          ("billboard_statewide", "Statewide Billboard", 100000, False, 28),
+          ("billboard_citywide", "Citywide Billboard", 35000, False, 28),
+      ],
+      "Advertisements": [
+          ("spotify_ad", "Spotify AD", 300000, False, 28),
+          ("youtube_ad", "YouTube AD", 180000, False, 28),
+          ("tiktok_ad", "TikTok AD", 60000, False, 28),
+          ("twitter_ad", "Twitter AD", 50000, False, 28),
+          ("instagram_ad", "Instagram AD", 35000, False, 28),
+      ],
+      "Brand Deals": [
+          ("luxury_brand_deal", "Luxury Brand Deal", 3000000, False, 28),
+          ("designer_brand_deal", "Designer Brand Deal", 750000, False, 28),
+          ("fast_fashion_deal", "Fast Fashion Deal", 270000, False, 28),
+          ("makeup_brand_deal", "Makeup Brand Deal", 70000, False, 28),
+          ("skincare_brand_deal", "Skincare Brand Deal", 55000, False, 28),
+      ],
+  },
+
+  "remixes": {
+      "Remix Versions": [
+          ("dj_remix", "DJ Remix", 7500, True, None),
+          ("club_remix", "Club Remix", 9000, True, None),
+          ("radio_remix", "Radio Remix", 6000, True, None),
+          ("extended_remix", "Extended Remix", 8500, True, None),
+          ("festival_remix", "Festival Remix", 12000, True, None),
+          ("house_remix", "House Remix", 10500, True, None),
+          ("afrobeats_remix", "Afrobeats Remix", 11000, True, None),
+          ("jersey_club_remix", "Jersey Club Remix", 8500, True, None),
+          ("drum_and_bass_remix", "Drum and Bass Remix", 11500, True, None),
+          ("hyperpop_remix", "Hyperpop Remix", 9500, True, None),
+          ("trap_remix", "Trap Remix", 10000, True, None),
+      ],
+      "Alternate Versions": [
+          ("acoustic_version", "Acoustic Version", 4500, True, None),
+          ("piano_version", "Piano Version", 4000, True, None),
+          ("stripped_version", "Stripped Version", 3800, True, None),
+          ("live_studio_version", "Live Studio Version", 6500, True, None),
+          ("orchestral_version", "Orchestral Version", 18000, True, None),
+          ("string_version", "String Version", 12500, True, None),
+          ("guitar_version", "Guitar Version", 4800, True, None),
+          ("choir_version", "Choir Version", 9500, True, None),
+      ],
+      "Viral / Edit Versions": [
+          ("sped_up_version", "Sped Up Version", 1500, True, None),
+          ("slowed_version", "Slowed Version", 1500, True, None),
+          ("reverb_version", "Reverb Version", 1200, True, None),
+          ("sped_up_reverb", "Sped Up + Reverb", 2200, True, None),
+          ("slowed_reverb", "Slowed + Reverb", 2200, True, None),
+          ("tiktok_edit", "TikTok Edit", 900, True, None),
+          ("radio_edit", "Radio Edit", 750, True, None),
+          ("clean_edit", "Clean Edit", 500, True, None),
+          ("explicit_edit", "Explicit Edit", 500, True, None),
+      ],
+      "Premium Producer Versions": [
+          ("famous_dj_remix", "Famous DJ Remix", 25000, True, None),
+          ("celebrity_producer_remix", "Celebrity Producer Remix", 40000, True, None),
+          ("superstar_producer_remix", "Superstar Producer Remix", 60000, True, None),
+          ("hitmaker_remix_package", "Hitmaker Remix Package", 75000, True, None),
+          ("executive_remix_production", "Executive Remix Production", 100000, True, None),
+      ],
+      "Vocals + Studio Add-Ons": [
+          ("new_vocal_recording_session", "New Vocal Recording Session", 2500, True, None),
+          ("background_vocals_added", "Background Vocals Added", 1800, True, None),
+          ("feature_verse_recording", "Feature Verse Recording", 4000, True, None),
+          ("full_vocal_rework", "Full Vocal Rework", 6500, True, None),
+          ("vocal_tuning_mix_update", "Vocal Tuning + Mix Update", 1500, True, None),
+          ("mix_update", "Mix Update", 1200, True, None),
+          ("mastering_update", "Mastering Update", 850, True, None),
+          ("full_remix_mix_and_master", "Full Remix Mix and Master", 3500, True, None),
+          ("session_musicians", "Session Musicians", 5000, True, None),
+          ("live_instruments_added", "Live Instruments Added", 7500, True, None),
+      ],
+  },
+
+  "festivals": {
+      "USA Festivals": [
+          ("coachella_headliner", "Coachella Headliner", 2500000, False, None),
+          ("coachella_opener", "Coachella Opener", 200000, False, None),
+          ("coachella_midday", "Coachella Midday", 300000, False, None),
+          ("lollapalooza", "Lollapalooza", 780000, False, None),
+          ("rolling_loud", "Rolling Loud", 650000, False, None),
+          ("summer_smash", "Summer Smash", 300000, False, None),
+          ("governors_ball", "Governors Ball", 220000, False, None),
+      ],
+      "Global Festivals": [
+          ("glastonbury_festival", "Glastonbury Festival", 1200000, False, None),
+          ("wireless_festival", "Wireless Festival", 700000, False, None),
+          ("tomorrowland", "Tomorrowland", 400000, False, None),
+          ("summer_sonic", "Summer Sonic", 300000, False, None),
+      ],
+      "Production": [
+          ("basic_production", "Basic Production", 25000, False, None),
+          ("standard_production", "Standard Production", 75000, False, None),
+          ("enhanced_production", "Enhanced Production", 250000, False, None),
+          ("headliner_production", "Headliner Production", 750000, False, None),
+          ("live_band", "Live Band", 100000, False, None),
+          ("backup_dancers", "Backup Dancers", 150000, False, None),
+          ("custom_stage_build", "Custom Stage Build", 450000, False, None),
+          ("themed_stage_build", "Themed Stage Build", 200000, False, None),
+      ],
+  },
+
+  "music_videos": {
+      "Resolution": [
+          ("mv_480p", "Standard Definition (480p)", 15000, False, None),
+          ("mv_720p", "High Definition (720p)", 80000, False, None),
+          ("mv_1080p", "Full High Definition (1080p)", 150000, False, None),
+          ("mv_4k", "4K Ultra HD (2160p)", 320000, False, None),
+          ("mv_8k", "8K Full Ultra HD (4320p)", 880000, False, None),
+      ],
+      "Music Video Extras": [
+          ("mv_cgi", "CGI", 250000, False, None),
+          ("mv_choreography", "Choreography", 100000, False, None),
+          ("mv_cinematic_editing", "Cinematic Editing", 95000, False, None),
+          ("mv_advanced_editing", "Advanced Editing", 50000, False, None),
+          ("mv_basic_editing", "Basic Editing", 10000, False, None),
+          ("mv_capcut_editing", "CapCut Editing", 500, False, None),
+      ],
+      "Directors": [
+          ("director_collin_tilley", "Collin Tilley", 1250000, False, None),
+          ("director_hype_williams", "Hype Williams", 950000, False, None),
+          ("director_hannah_lux_davis", "Hannah Lux Davis", 800000, False, None),
+          ("director_cole_bennett", "Cole Bennett", 400000, False, None),
+          ("director_petra_collins", "Petra Collins", 220000, False, None),
+          ("director_shotbyspike", "Shotbyspike", 80000, False, None),
+          ("director_lyrical_lemonade", "Lyrical Lemonade", 45000, False, None),
+      ],
+      "Filming Location": [
+          ("filming_house", "House", 5000, False, None),
+          ("filming_outdoor", "Outdoor", 25000, False, None),
+          ("filming_studio_set", "Studio Set", 150000, False, None),
+          ("filming_international_destination", "International Destination", 325000, False, None),
+      ],
+      "Promotion": [
+          ("mv_youtube_premiere", "YouTube Premiere", 50000, False, None),
+          ("mv_trending_push", "Trending Push", 300000, False, None),
+          ("mv_youtube_ads", "YouTube ADs", 150000, False, None),
+      ],
+  },
+
+  "campaigns": {
+      "Campaigns": [
+          ("top40_airplay_campaign", "Top 40 Airplay Campaign", 3000000, False, 28),
+          ("genre_airplay_campaign", "Genre Airplay Campaign", 1200000, False, 28),
+          ("itunes_campaign", "iTunes Campaign", 500000, False, 28),
+          ("artist_store_bandcamp", "Artist Store: Bandcamp", 275000, False, 28),
+          ("artist_store_merchbar", "Artist Store: Merchbar", 275000, False, 28),
+      ],
+      "Streaming Priority": [
+          ("priority_apple_music", "Apple Music Priority", 2000000, False, 28),
+          ("priority_spotify", "Spotify Priority", 1500000, False, 28),
+          ("priority_spotify_autoplay", "Spotify Autoplay", 350000, False, 28),
+          ("priority_youtube_ads", "YouTube ADS", 150000, False, 28),
+      ],
+      "Partnerships": [
+          ("global_brand_partnership", "Global Brand Partnership", 2500000, False, 28),
+          ("custom_brand_partnership", "Custom Brand Partnership", 800000, False, 28),
+          ("target_partnership", "Target Partnership", 400000, False, 28),
+          ("tiktok_partnership", "TikTok Partnership", 310000, False, 28),
+          ("spotify_partnership", "Spotify Partnership", 220000, False, 28),
+          ("amazon_partnership", "Amazon Partnership", 190000, False, 28),
+      ],
+  },
+
+  "mandatory": {
+      "Singles": [
+          ("song_registry", "Song Registry", 1000, True, None),
+          ("single_licensing_fee", "Licensing Fee (Single)", 750, True, None),
+          ("single_distribution", "Distribution (Single)", 500, True, None),
+          ("single_cover_art_license", "Cover Art License (Single)", 300, True, None),
+          ("sample_clearance", "Sample Clearance", 10000, True, None),
+          ("single_rights_protection", "Rights Protection (Single)", 300, True, None),
+          ("isrc_code", "ISRC Code", 50, True, None),
+      ],
+      "Projects": [
+          ("album_registry", "Album Registry", 2500, True, None),
+          ("mixtape_registry", "Mixtape Registry", 1000, True, None),
+          ("project_licensing_fee", "Licensing Fee (Project)", 1500, True, None),
+          ("project_distribution", "Distribution (Project)", 1000, True, None),
+          ("project_cover_art_license", "Cover Art License (Project)", 750, True, None),
+          ("project_rights_protection", "Rights Protection (Project)", 1200, True, None),
+          ("upc_code", "UPC Code", 150, True, None),
+      ],
+  },
+
+  "playlisting": {
+      "Spotify": [
+          ("todays_top_hits", "Today's Top Hits", 120000, False, 42),
+          ("new_music_friday", "New Music Friday", 100000, False, 42),
+          ("rap_caviar", "Rap Caviar", 80000, False, 42),
+          ("viva_latino", "Viva Latino", 65000, False, 42),
+          ("pop_rising", "Pop Rising", 60000, False, 42),
+      ],
+      "Apple Music": [
+          ("todays_hits_apple", "Today's Hits", 250000, False, 42),
+          ("rap_life", "Rap Life", 110000, False, 42),
+          ("a_list_pop", "A-List Pop", 100000, False, 42),
+          ("rnb_now", "R&B Now", 55000, False, 42),
+          ("onrepeat", "#OnRepeat", 50000, False, 42),
+      ],
+  },
+
+  "interviews": {
+      "TV Show Interviews": [
+          ("hot_ones", "The Hot Ones", 650000, False, 28),
+          ("tonight_show", "The Tonight Show w/ Jimmy Fallon", 575000, False, 28),
+          ("ellen_show", "The Ellen DeGeneres Show", 530000, False, 28),
+          ("snl", "Saturday Night Live", 500000, False, 28),
+          ("wendy_williams", "Wendy Williams", 260000, False, 28),
+          ("late_show", "The Late Show", 200000, False, 28),
+          ("gayle_king_show", "The Gayle King Show", 115000, False, 28),
+          ("zeus_network_talk", "Zeus Network Talk", 50000, False, 28),
+      ],
+      "Podcast Interviews": [
+          ("breakfast_club", "The Breakfast Club", 300000, False, 28),
+          ("paris_radio", "Paris Radio", 150000, False, 28),
+          ("chicken_shop_date", "Chicken Shop Date", 125000, False, 28),
+          ("call_her_daddy", "Call Her Daddy", 120000, False, 28),
+          ("unwine_with_tashak_interview", "Unwine With Tasha K", 85000, False, 28),
+          ("messy_maj_show", "The Messy Maj Show", 10000, False, 28),
+      ],
+      "Blog Interviews": [
+          ("billboard_interview", "Billboard Interview", 500000, False, 28),
+          ("complex_interview", "Complex", 225000, False, 28),
+          ("shade_room_interview", "The Shade Room", 200000, False, 28),
+          ("hollywood_unlocked_interview", "Hollywood Unlocked", 100000, False, 28),
+          ("kenbarbie_interview", "KenBarbie", 40000, False, 28),
+      ],
+  },
+
+  "tours": {
+      "Venue Booking": [
+          ("tour_showcase_night", "Showcase Night", 15000, False, None),
+          ("tour_small_club_date", "Small Club Date", 40000, False, None),
+          ("tour_club_run_3", "Club Run (3 Dates)", 110000, False, None),
+          ("tour_theater_date", "Theater Date", 125000, False, None),
+          ("tour_theater_run_5", "Theater Run (5 Dates)", 575000, False, None),
+          ("tour_amphitheater_date", "Amphitheater Date", 260000, False, None),
+          ("tour_arena_date", "Arena Date", 800000, False, None),
+          ("tour_arena_run_5", "Arena Run (5 Dates)", 3750000, False, None),
+          ("tour_stadium_date", "Stadium Date", 2500000, False, None),
+          ("tour_world_tour_leg", "World Tour Leg", 6500000, False, None),
+      ],
+      "Tour Production": [
+          ("tour_basic_stage_package", "Basic Stage Package", 35000, False, None),
+          ("tour_standard_stage_package", "Standard Stage Package", 95000, False, None),
+          ("tour_premium_stage_package", "Premium Stage Package", 275000, False, None),
+          ("tour_pyro_package", "Pyro Package", 180000, False, None),
+          ("tour_led_visual_package", "LED Visual Package", 225000, False, None),
+          ("tour_live_band_upgrade", "Live Band Upgrade", 150000, False, None),
+          ("tour_backup_dancers_upgrade", "Backup Dancers Upgrade", 175000, False, None),
+      ],
+      "Tour Logistics": [
+          ("tour_security_team", "Security Team", 55000, False, None),
+          ("tour_sprinter_van", "Sprinter Van", 45000, False, None),
+          ("tour_tour_bus", "Tour Bus", 120000, False, None),
+          ("tour_flights_hotels", "Flights + Hotels", 210000, False, None),
+          ("tour_merch_booth_setup", "Merch Booth Setup", 65000, False, None),
+          ("tour_vip_meet_greet_setup", "VIP Meet & Greet Setup", 85000, False, None),
+      ],
+      "Tour Promotion": [
+          ("tour_city_poster_run", "City Poster Run", 35000, False, 28),
+          ("tour_local_promo_push", "Local Promo Push", 60000, False, 28),
+          ("tour_national_promo_push", "National Tour Promo Push", 350000, False, 28),
+          ("tour_radio_partner_push", "Tour Radio Partner Push", 220000, False, 28),
+      ],
+  },
+
+  "airplay": {
+      "Radio Campaigns": [
+          ("airplay_local_radio_test_spins", "Local Radio Test Spins", 20000, False, 28),
+          ("airplay_college_radio_run", "College Radio Run", 35000, False, 28),
+          ("airplay_regional_push", "Regional Airplay Push", 90000, False, 28),
+          ("airplay_urban_push", "Urban Radio Push", 175000, False, 28),
+          ("airplay_rhythmic_push", "Rhythmic Radio Push", 220000, False, 28),
+          ("airplay_pop_push", "Pop Radio Push", 350000, False, 28),
+          ("airplay_top40_monitored_push", "Top 40 Monitored Push", 650000, False, 28),
+          ("airplay_national_run", "National Airplay Run", 1100000, False, 28),
+      ],
+      "Airplay Add-Ons": [
+          ("airplay_overnight_spins_boost", "Overnight Spins Boost", 45000, False, 28),
+          ("airplay_drive_time_placement", "Drive Time Placement", 100000, False, 28),
+          ("airplay_radio_interview_package", "Radio Interview Package", 75000, False, 28),
+          ("airplay_station_takeover_weekend", "Station Takeover Weekend", 250000, False, 28),
+          ("airplay_multi_format_crossover", "Multi-Format Crossover", 400000, False, 28),
+          ("airplay_extension_2_weeks", "Airplay Extension (2 Weeks)", 150000, False, 14),
+      ],
+  },
+
+  "payola": {
+      "Streaming Boosts": [
+          ("payola_stream_5", "Streaming Boost 5%", 500000, True, 28),
+          ("payola_stream_10", "Streaming Boost 10%", 750000, True, 28),
+          ("payola_stream_25", "Streaming Boost 25%", 1500000, True, 28),
+          ("payola_stream_50", "Streaming Boost 50%", 2725000, True, 28),
+          ("payola_stream_75", "Streaming Boost 75%", 3500000, True, 28),
+          ("payola_stream_100", "Streaming Boost 100%", 5000000, True, 28),
+          ("payola_stream_125", "Streaming Boost 125%", 6725000, True, 28),
+      ],
+      "Radioplay Boosts": [
+          ("payola_radio_5", "Radioplay Boost 5%", 250000, True, 28),
+          ("payola_radio_10", "Radioplay Boost 10%", 500000, True, 28),
+          ("payola_radio_25", "Radioplay Boost 25%", 1250000, True, 28),
+          ("payola_radio_50", "Radioplay Boost 50%", 2500000, True, 28),
+          ("payola_radio_75", "Radioplay Boost 75%", 3000000, True, 28),
+          ("payola_radio_100", "Radioplay Boost 100%", 5000000, True, 28),
+          ("payola_radio_125", "Radioplay Boost 125%", 6725000, True, 28),
+      ],
+  },
+}
+
+PHYSICAL_STOCK = {
+  "cd_single": {
+      "name": "CD Single",
+      "category": "physicals",
+      "tiers": {
+          "single": 2.35,
+          "100": 216.20,
+          "500": 1034.00,
+          "1000": 1950.50,
+          "2500": 4700.00,
+          "5000": 9047.50,
+          "10000": 17390.00,
+          "25000": 41125.00,
+          "50000": 76375.00,
+      },
+  },
+  "signed_cd_single": {
+      "name": "Signed CD Single",
+      "category": "physicals",
+      "tiers": {
+          "single": 3.40,
+          "100": 312.80,
+          "500": 1496.00,
+          "1000": 2822.00,
+          "2500": 6800.00,
+          "5000": 13090.00,
+          "10000": 25160.00,
+          "25000": 59500.00,
+          "50000": 110500.00,
+      },
+  },
+  "vinyl_7_single": {
+      "name": "7\" Vinyl Single",
+      "category": "physicals",
+      "tiers": {
+          "single": 6.75,
+          "100": 621.00,
+          "500": 2970.00,
+          "1000": 5602.50,
+          "2500": 13500.00,
+          "5000": 25987.50,
+          "10000": 49950.00,
+          "25000": 118125.00,
+          "50000": 219375.00,
+      },
+  },
+  "signed_vinyl_7_single": {
+      "name": "Signed 7\" Vinyl Single",
+      "category": "physicals",
+      "tiers": {
+          "single": 8.25,
+          "100": 759.00,
+          "500": 3630.00,
+          "1000": 6847.50,
+          "2500": 16500.00,
+          "5000": 31762.50,
+          "10000": 61050.00,
+          "25000": 144375.00,
+          "50000": 268125.00,
+      },
+  },
+  "cassette_single": {
+      "name": "Cassette Single",
+      "category": "physicals",
+      "tiers": {
+          "single": 2.10,
+          "100": 193.20,
+          "500": 924.00,
+          "1000": 1743.00,
+          "2500": 4200.00,
+          "5000": 8085.00,
+          "10000": 15540.00,
+          "25000": 36750.00,
+          "50000": 68250.00,
+      },
+  },
+  "signed_cassette_single": {
+      "name": "Signed Cassette Single",
+      "category": "physicals",
+      "tiers": {
+          "single": 3.15,
+          "100": 289.80,
+          "500": 1386.00,
+          "1000": 2614.50,
+          "2500": 6300.00,
+          "5000": 12127.50,
+          "10000": 23310.00,
+          "25000": 55125.00,
+          "50000": 102375.00,
+      },
+  },
+}
+
+
+def build_shop_items():
+  items = {}
+  for category, subcats in RAW_SHOP.items():
+      for subcategory, entries in subcats.items():
+          for item_id, name, price, stackable, expires_in_days in entries:
+              items[item_id] = {
+                  "name": name,
+                  "category": category,
+                  "subcategory": subcategory,
+                  "price": price,
+                  "stackable": stackable,
+                  "expires_in_days": expires_in_days,
+              }
+  return items
+
+
+SHOP_ITEMS = build_shop_items()
